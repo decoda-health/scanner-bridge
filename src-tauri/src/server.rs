@@ -20,8 +20,8 @@ pub struct AppState {
     pub backend: Box<dyn ScannerBackend>,
 }
 
-/// Start the HTTP + WebSocket server on localhost.
-pub async fn start_server(backend: Box<dyn ScannerBackend>, port: u16) -> Result<(), String> {
+/// Build the application router with the given backend.
+pub fn build_router(backend: Box<dyn ScannerBackend>) -> Router {
     let state = Arc::new(AppState { backend });
 
     let cors = CorsLayer::new()
@@ -33,12 +33,17 @@ pub async fn start_server(backend: Box<dyn ScannerBackend>, port: u16) -> Result
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(tower_http::cors::Any);
 
-    let app = Router::new()
+    Router::new()
         .route("/health", get(health))
         .route("/scanners", get(list_scanners))
         .route("/ws", get(ws_upgrade))
         .layer(cors)
-        .with_state(state);
+        .with_state(state)
+}
+
+/// Start the HTTP + WebSocket server on localhost.
+pub async fn start_server(backend: Box<dyn ScannerBackend>, port: u16) -> Result<(), String> {
+    let app = build_router(backend);
 
     let addr = format!("127.0.0.1:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -93,9 +98,9 @@ enum WsCommand {
 }
 
 /// Messages the server sends back over the WebSocket.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum WsEvent {
+pub enum WsEvent {
     ScanStarted,
     ScanProgress { page: usize },
     ScanComplete { pages: Vec<PageData> },
@@ -103,13 +108,13 @@ enum WsEvent {
     Error { message: String },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PageData {
+pub struct PageData {
     /// Base64-encoded image data as a data URL
-    data_url: String,
-    width: u32,
-    height: u32,
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>) {

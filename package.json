@@ -1,0 +1,10 @@
+{
+  "name": "scanner-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "tauri": "cargo tauri",
+    "dev": "cargo tauri dev -- -- --mock",
+    "build": "cargo tauri build"
+  }
+}

@@ -25,11 +25,13 @@ pub fn build_router(backend: Box<dyn ScannerBackend>) -> Router {
     let state = Arc::new(AppState { backend });
 
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list([
-            "http://localhost:3000".parse().unwrap(),
-            "http://localhost:3001".parse().unwrap(),
-            "https://app.decoda.com".parse().unwrap(),
-        ]))
+        .allow_origin(AllowOrigin::predicate(|origin, _| {
+            let origin = origin.as_bytes();
+            // Allow any localhost port (dev) and the production domain
+            origin.starts_with(b"http://localhost:")
+                || origin.starts_with(b"http://127.0.0.1:")
+                || origin == b"https://app.decodahealth.com"
+        }))
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(tower_http::cors::Any);
 

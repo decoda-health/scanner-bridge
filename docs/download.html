@@ -52,50 +52,66 @@
     <div id="alt" class="alt-link" style="display:none"></div>
   </div>
   <script>
-    const BASE = 'https://github.com/decoda-health/scanner-bridge/releases/latest/download/';
-    const files = {
-      macArm: 'Decoda Scanner Bridge_0.1.0_aarch64-apple-darwin.dmg',
-      macIntel: 'Decoda Scanner Bridge_0.1.0_x86_64-apple-darwin.dmg',
-      windows: 'Decoda Scanner Bridge_0.1.0_x64_en-US.msi',
-    };
+    const REPO = 'decoda-health/scanner-bridge';
+    const API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+    const RELEASES_PAGE = 'https://github.com/' + REPO + '/releases/latest';
 
-    const ua = navigator.userAgent;
     const btn = document.getElementById('download-btn');
     const status = document.getElementById('status');
     const alt = document.getElementById('alt');
 
-    let primary, primaryLabel, altLinks = [];
-
-    if (ua.includes('Mac')) {
-      // Default to Apple Silicon, offer Intel as alt
-      primary = files.macArm;
-      primaryLabel = 'Download for macOS (Apple Silicon)';
-      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
-      altLinks.push({ href: BASE + files.windows, label: 'Windows' });
-    } else if (ua.includes('Win')) {
-      primary = files.windows;
-      primaryLabel = 'Download for Windows';
-      altLinks.push({ href: BASE + files.macArm, label: 'macOS (Apple Silicon)' });
-      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
-    } else {
-      status.textContent = 'Decoda Scanner Bridge is available for macOS and Windows.';
-      altLinks.push({ href: BASE + files.macArm, label: 'macOS (Apple Silicon)' });
-      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
-      altLinks.push({ href: BASE + files.windows, label: 'Windows' });
+    function classify(name) {
+      if (name.endsWith('.dmg') && name.includes('aarch64')) return 'macArm';
+      if (name.endsWith('.dmg') && name.includes('x86_64')) return 'macIntel';
+      if (name.endsWith('.msi')) return 'windows';
+      return null;
     }
 
-    if (primary) {
-      status.textContent = '';
-      btn.href = BASE + primary;
-      btn.textContent = primaryLabel;
-      btn.style.display = 'inline-block';
-    }
+    fetch(API)
+      .then(r => r.json())
+      .then(release => {
+        const assets = {};
+        for (const a of release.assets) {
+          const key = classify(a.name);
+          if (key) assets[key] = a.browser_download_url;
+        }
 
-    if (altLinks.length) {
-      alt.style.display = 'block';
-      alt.innerHTML = 'Also available for ' +
-        altLinks.map(l => '<a href="' + l.href + '">' + l.label + '</a>').join(', ');
-    }
+        const ua = navigator.userAgent;
+        let primary, primaryLabel, altLinks = [];
+
+        if (ua.includes('Mac')) {
+          primary = assets.macArm;
+          primaryLabel = 'Download for macOS (Apple Silicon)';
+          if (assets.macIntel) altLinks.push({ href: assets.macIntel, label: 'macOS (Intel)' });
+          if (assets.windows) altLinks.push({ href: assets.windows, label: 'Windows' });
+        } else if (ua.includes('Win')) {
+          primary = assets.windows;
+          primaryLabel = 'Download for Windows';
+          if (assets.macArm) altLinks.push({ href: assets.macArm, label: 'macOS (Apple Silicon)' });
+          if (assets.macIntel) altLinks.push({ href: assets.macIntel, label: 'macOS (Intel)' });
+        } else {
+          status.textContent = 'Decoda Scanner Bridge is available for macOS and Windows.';
+          if (assets.macArm) altLinks.push({ href: assets.macArm, label: 'macOS (Apple Silicon)' });
+          if (assets.macIntel) altLinks.push({ href: assets.macIntel, label: 'macOS (Intel)' });
+          if (assets.windows) altLinks.push({ href: assets.windows, label: 'Windows' });
+        }
+
+        if (primary) {
+          status.textContent = '';
+          btn.href = primary;
+          btn.textContent = primaryLabel;
+          btn.style.display = 'inline-block';
+        }
+
+        if (altLinks.length) {
+          alt.style.display = 'block';
+          alt.innerHTML = 'Also available for ' +
+            altLinks.map(l => '<a href="' + l.href + '">' + l.label + '</a>').join(', ');
+        }
+      })
+      .catch(() => {
+        status.innerHTML = 'Could not fetch the latest release. <a href="' + RELEASES_PAGE + '" style="color:#4f6df5">Download from GitHub</a>';
+      });
   </script>
 </body>
 </html>

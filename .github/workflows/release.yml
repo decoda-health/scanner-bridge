@@ -60,20 +60,9 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           rm certificate.p12
 
-      - name: Build Tauri app (signed)
-        if: "!(startsWith(matrix.platform, 'macos')) || secrets.APPLE_SIGNING_IDENTITY != ''"
+      - name: Build Tauri app
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: cargo tauri build --target ${{ matrix.target }}
-        working-directory: .
-
-      - name: Build Tauri app (unsigned)
-        if: startsWith(matrix.platform, 'macos') && secrets.APPLE_SIGNING_IDENTITY == ''
-        env:
-          APPLE_SIGNING_IDENTITY: "-"
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         run: cargo tauri build --target ${{ matrix.target }}
         working-directory: .
 

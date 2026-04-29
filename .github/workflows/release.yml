@@ -43,9 +43,40 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
+      # macOS: import signing certificate (only if secrets are configured)
+      - name: Import Apple signing certificate
+        if: startsWith(matrix.platform, 'macos') && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm certificate.p12
+
       - name: Build Tauri app
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: cargo tauri build --target ${{ matrix.target }}
         working-directory: .
+
+      # macOS: create DMG from .app bundle (Tauri's built-in DMG bundler is broken on newer macOS)
+      - name: Create macOS DMG
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          APP_PATH="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Decoda Scanner Bridge.app"
+          DMG_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
+          mkdir -p "$DMG_DIR"
+          hdiutil create -volname "Decoda Scanner Bridge" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_DIR/Decoda Scanner Bridge_0.1.0_${{ matrix.target }}.dmg"
 
       # macOS: upload .dmg
       - name: Upload macOS DMG

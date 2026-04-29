@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download Decoda Scanner Bridge</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #0a0a0a;
+      color: #e0e0e0;
+    }
+    .container {
+      text-align: center;
+      padding: 40px 24px;
+      max-width: 480px;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; }
+    p { font-size: 0.95rem; color: #888; line-height: 1.5; }
+    .btn {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 14px 32px;
+      background: #4f6df5;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #3b57d9; }
+    .alt-link {
+      display: block;
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: #666;
+    }
+    .alt-link a { color: #888; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Download Decoda Scanner Bridge</h1>
+    <p id="status">Detecting your operating system...</p>
+    <a id="download-btn" class="btn" style="display:none">Download</a>
+    <div id="alt" class="alt-link" style="display:none"></div>
+  </div>
+  <script>
+    const BASE = 'https://github.com/decoda-health/scanner-bridge/releases/latest/download/';
+    const files = {
+      macArm: 'Decoda Scanner Bridge_0.1.0_aarch64-apple-darwin.dmg',
+      macIntel: 'Decoda Scanner Bridge_0.1.0_x86_64-apple-darwin.dmg',
+      windows: 'Decoda Scanner Bridge_0.1.0_x64_en-US.msi',
+    };
+
+    const ua = navigator.userAgent;
+    const btn = document.getElementById('download-btn');
+    const status = document.getElementById('status');
+    const alt = document.getElementById('alt');
+
+    let primary, primaryLabel, altLinks = [];
+
+    if (ua.includes('Mac')) {
+      // Default to Apple Silicon, offer Intel as alt
+      primary = files.macArm;
+      primaryLabel = 'Download for macOS (Apple Silicon)';
+      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
+      altLinks.push({ href: BASE + files.windows, label: 'Windows' });
+    } else if (ua.includes('Win')) {
+      primary = files.windows;
+      primaryLabel = 'Download for Windows';
+      altLinks.push({ href: BASE + files.macArm, label: 'macOS (Apple Silicon)' });
+      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
+    } else {
+      status.textContent = 'Decoda Scanner Bridge is available for macOS and Windows.';
+      altLinks.push({ href: BASE + files.macArm, label: 'macOS (Apple Silicon)' });
+      altLinks.push({ href: BASE + files.macIntel, label: 'macOS (Intel)' });
+      altLinks.push({ href: BASE + files.windows, label: 'Windows' });
+    }
+
+    if (primary) {
+      status.textContent = '';
+      btn.href = BASE + primary;
+      btn.textContent = primaryLabel;
+      btn.style.display = 'inline-block';
+    }
+
+    if (altLinks.length) {
+      alt.style.display = 'block';
+      alt.innerHTML = 'Also available for ' +
+        altLinks.map(l => '<a href="' + l.href + '">' + l.label + '</a>').join(', ');
+    }
+  </script>
+</body>
+</html>

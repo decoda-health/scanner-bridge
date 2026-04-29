@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
-  "productName": "Scanner Bridge",
+  "productName": "Decoda Scanner Bridge",
   "version": "0.1.0",
   "identifier": "com.decoda.scanner-bridge",
   "build": {
@@ -9,22 +9,34 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [],
+    "windows": [
+      {
+        "label": "main",
+        "title": "Decoda Scanner Bridge",
+        "width": 400,
+        "height": 300,
+        "visible": true
+      }
+    ],
     "trayIcon": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": true,
-      "tooltip": "Scanner Bridge"
+      "tooltip": "Decoda Scanner Bridge"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": null,
+      "entitlements": null
+    }
   }
 }

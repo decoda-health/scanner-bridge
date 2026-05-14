@@ -35,20 +35,10 @@ tracing-subscriber = "0.3"
 # Utilities
 uuid = { version = "1", features = ["v4"] }
 
-# macOS scanner support
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSObject", "NSString", "NSArray", "NSThread"] }
-block2 = "0.6"
+# HTTP client for eSCL scanner protocol
+reqwest = { version = "0.12", features = ["blocking"] }
 
-# Windows scanner support
-[target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
-    "Win32_Devices_ImageAcquisition",
-    "Win32_System_Com",
-    "Win32_Foundation",
-    "Win32_Graphics_Imaging",
-] }
+
 
 [dev-dependencies]
 tokio-tungstenite = "0.28"

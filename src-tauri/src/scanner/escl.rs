@@ -1,6 +1,24 @@
+//! eSCL (AirScan) scanner discovery and scanning — cross-platform.
+//!
+//! Discovery uses platform-native mDNS tools to find scanners advertising
+//! `_uscan._tcp` (eSCL) on the local network. Scanning is done via HTTP.
+
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
+
+use super::{ScanError, ScanOptions, ScannedPage, ScannerBackend, ScannerInfo, ScannerType};
+
+/// Cache of discovered scanners: UUID → (name, host)
+static ESCL_SCANNERS: OnceLock<Mutex<HashMap<String, (String, String)>>> = OnceLock::new();
+
+fn escl_scanners() -> &'static Mutex<HashMap<String, (String, String)>> {
+    ESCL_SCANNERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// ---------------------------------------------------------------------------
+// Discovery via platform-native mDNS
+// ---------------------------------------------------------------------------
 
 /// Run a command with a timeout (dns-sd never exits on its own).
 fn run_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> std::io::Result<std::process::Output> {
@@ -15,49 +33,27 @@ fn run_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> std::io::Res
     child.wait_with_output()
 }
 
-use super::{ScanError, ScanOptions, ScannedPage, ScannerBackend, ScannerInfo, ScannerType};
-
-// ---------------------------------------------------------------------------
-// Globals
-// ---------------------------------------------------------------------------
-
-/// Cache of discovered scanners: UUID → (name, hostname)
-static ESCL_SCANNERS: OnceLock<Mutex<HashMap<String, (String, String)>>> = OnceLock::new();
-
-fn escl_scanners() -> &'static Mutex<HashMap<String, (String, String)>> {
-    ESCL_SCANNERS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-// ---------------------------------------------------------------------------
-// Bonjour discovery via dns-sd CLI
-// ---------------------------------------------------------------------------
-
-/// Discover eSCL scanners on the local network using Bonjour.
-/// Runs `dns-sd` commands to browse for `_uscan._tcp` services.
-fn discover_escl_scanners() {
-    // Browse for _uscan._tcp services (eSCL/AirScan scanners)
+/// Discover eSCL scanners on the local network.
+/// Uses `dns-sd` (macOS) or `dns-sd.exe` (Windows with Bonjour installed).
+fn discover_scanners() {
     let output = run_with_timeout("dns-sd", &["-B", "_uscan._tcp", "local"], 3);
 
     let output = match output {
         Ok(o) => o,
         Err(e) => {
-            tracing::warn!("dns-sd browse failed: {e}");
+            tracing::warn!("Scanner discovery failed (dns-sd not available?): {e}");
             return;
         }
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let text = format!("{stdout}{stderr}");
+    let text = combined_output(&output);
 
-    // Parse instance names from dns-sd output
-    // Format: "Timestamp  Add  Flags  IF  Domain  ServiceType  InstanceName"
+    // Parse instance names from dns-sd -B output
     let mut names: Vec<String> = Vec::new();
     for line in text.lines() {
         if !line.contains("_uscan._tcp.") || line.contains("STARTING") {
             continue;
         }
-        // The instance name is everything after the service type
         if let Some(idx) = line.find("_uscan._tcp.") {
             let after = &line[idx + "_uscan._tcp.".len()..];
             let name = after.trim().to_string();
@@ -68,12 +64,12 @@ fn discover_escl_scanners() {
     }
 
     for name in &names {
-        resolve_escl_scanner(name);
+        resolve_scanner(name);
     }
 }
 
-/// Resolve a single eSCL scanner's hostname and UUID via dns-sd -L.
-fn resolve_escl_scanner(instance_name: &str) {
+/// Resolve a scanner's hostname and UUID.
+fn resolve_scanner(instance_name: &str) {
     let output = run_with_timeout("dns-sd", &["-L", instance_name, "_uscan._tcp", "local"], 3);
 
     let output = match output {
@@ -84,59 +80,50 @@ fn resolve_escl_scanner(instance_name: &str) {
         }
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let text = format!("{stdout}{stderr}");
-
-    // Parse: "InstanceName._uscan._tcp.local. can be reached at hostname:port"
-    // and TXT records for UUID
+    let text = combined_output(&output);
     let mut hostname: Option<String> = None;
     let mut uuid: Option<String> = None;
 
     for line in text.lines() {
-        if line.contains("can be reached at") {
-            // Extract hostname:port
-            if let Some(idx) = line.find("can be reached at ") {
-                let after = &line[idx + "can be reached at ".len()..];
-                // Take up to the space or parenthesis
-                let host = after
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .trim_end_matches('.');
-                // Strip the port
-                if let Some(colon) = host.rfind(':') {
-                    hostname = Some(host[..colon].to_string());
-                } else {
-                    hostname = Some(host.to_string());
-                }
+        if let Some(idx) = line.find("can be reached at ") {
+            let after = &line[idx + "can be reached at ".len()..];
+            let host = after.split_whitespace().next().unwrap_or("");
+            // Strip trailing dot and port (host.:port)
+            let host = host.trim_end_matches('.');
+            if let Some(colon) = host.rfind(':') {
+                hostname = Some(host[..colon].trim_end_matches('.').to_string());
+            } else {
+                hostname = Some(host.to_string());
             }
         }
-        // Look for UUID in TXT record
-        if line.contains("UUID=") {
-            if let Some(idx) = line.find("UUID=") {
-                let after = &line[idx + "UUID=".len()..];
-                let id = after.split_whitespace().next().unwrap_or("").to_string();
-                if !id.is_empty() {
-                    uuid = Some(id);
-                }
+        if let Some(idx) = line.find("UUID=") {
+            let after = &line[idx + "UUID=".len()..];
+            let id = after.split_whitespace().next().unwrap_or("").to_string();
+            if !id.is_empty() {
+                uuid = Some(id);
             }
         }
     }
 
     if let (Some(host), Some(id)) = (hostname, uuid) {
-        tracing::info!("Resolved eSCL scanner: {instance_name} → {host} (UUID={id})");
+        tracing::info!("Discovered eSCL scanner: {instance_name} → {host} (UUID={id})");
         if let Ok(mut map) = escl_scanners().lock() {
             map.insert(id, (instance_name.to_string(), host));
         }
     }
 }
 
+fn combined_output(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    format!("{stdout}{stderr}")
+}
+
 // ---------------------------------------------------------------------------
-// eSCL (AirScan) HTTP-based scanning
+// eSCL HTTP scanning
 // ---------------------------------------------------------------------------
 
-fn escl_scan(
+pub fn escl_scan(
     host: &str,
     options: &ScanOptions,
     on_progress: &dyn Fn(usize),
@@ -225,7 +212,6 @@ fn escl_scan(
     tracing::info!("Scan job created: {job_url}");
     tracing::info!("Waiting for scan to complete...");
 
-    // Poll for the scanned image — the scanner may take a while
     let img_resp = client
         .get(format!("{job_url}/NextDocument"))
         .send()
@@ -268,29 +254,35 @@ fn escl_scan(
 }
 
 // ---------------------------------------------------------------------------
-// MacOsScanner
+// EsclScanner backend
 // ---------------------------------------------------------------------------
 
-pub struct MacOsScanner;
+pub struct EsclScanner;
 
-impl MacOsScanner {
-    pub fn new() -> Self {
-        // Run initial discovery
-        discover_escl_scanners();
-
-        // Periodically re-discover scanners
-        std::thread::spawn(|| {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(15));
-                discover_escl_scanners();
-            }
-        });
-
-        MacOsScanner
+impl Default for EsclScanner {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl ScannerBackend for MacOsScanner {
+impl EsclScanner {
+    pub fn new() -> Self {
+        // Run initial discovery
+        discover_scanners();
+
+        // Periodically re-discover
+        std::thread::spawn(|| {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                discover_scanners();
+            }
+        });
+
+        EsclScanner
+    }
+}
+
+impl ScannerBackend for EsclScanner {
     fn list_scanners(&self) -> Vec<ScannerInfo> {
         let map = escl_scanners().lock().unwrap_or_else(|e| e.into_inner());
         map.iter()
@@ -311,7 +303,8 @@ impl ScannerBackend for MacOsScanner {
             let map = escl_scanners()
                 .lock()
                 .map_err(|e| ScanError::from(e.to_string()))?;
-            map.get(&options.scanner_id).map(|(_name, host)| host.clone())
+            map.get(&options.scanner_id)
+                .map(|(_name, host)| host.clone())
         };
 
         let host = host.ok_or_else(|| {

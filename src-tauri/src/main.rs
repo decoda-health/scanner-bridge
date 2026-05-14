@@ -24,12 +24,14 @@ fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT);
 
-    // Create the scanner backend
-    let backend = scanner::create_backend(use_mock);
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
+            // Create the scanner backend inside setup so that on macOS the
+            // ICDeviceBrowser delegate callbacks can fire on the now-running
+            // main run loop.
+            let backend = scanner::create_backend(use_mock);
+
             // Build the system tray menu
             let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

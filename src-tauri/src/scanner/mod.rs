@@ -1,10 +1,5 @@
+pub mod escl;
 pub mod mock;
-
-#[cfg(target_os = "macos")]
-pub mod macos;
-
-#[cfg(target_os = "windows")]
-pub mod windows;
 
 use serde::{Deserialize, Serialize};
 
@@ -117,21 +112,6 @@ pub fn create_backend(use_mock: bool) -> Box<dyn ScannerBackend> {
         return Box::new(mock::MockScanner::new());
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        tracing::info!("Using macOS ImageCaptureCore scanner backend");
-        Box::new(macos::MacOsScanner::new())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        tracing::info!("Using Windows WIA scanner backend");
-        Box::new(windows::WindowsScanner::new())
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        tracing::warn!("No native scanner backend for this platform, falling back to mock");
-        Box::new(mock::MockScanner::new())
-    }
+    tracing::info!("Using eSCL (AirScan) scanner backend");
+    Box::new(escl::EsclScanner::new())
 }

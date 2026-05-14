@@ -73,7 +73,24 @@ jobs:
           APP_PATH="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Decoda Scanner Bridge.app"
           DMG_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
           mkdir -p "$DMG_DIR"
-          hdiutil create -volname "Decoda Scanner Bridge" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_DIR/Decoda Scanner Bridge_0.1.0_${{ matrix.target }}.dmg"
+
+          # Create a staging folder with the .app and a symlink to /Applications
+          STAGING="$DMG_DIR/staging"
+          mkdir -p "$STAGING"
+          cp -R "$APP_PATH" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          # Set folder icon to the Decoda logo so the mounted DMG shows the brand
+          ICON_SRC="$APP_PATH/Contents/Resources/icon.icns"
+          if [ -f "$ICON_SRC" ]; then
+            cp "$ICON_SRC" "$STAGING/.VolumeIcon.icns"
+          fi
+
+          hdiutil create -volname "Decoda Scanner Bridge" \
+            -srcfolder "$STAGING" -ov -format UDZO \
+            "$DMG_DIR/Decoda Scanner Bridge_0.1.0_${{ matrix.target }}.dmg"
+
+          rm -rf "$STAGING"
 
       # macOS: upload .dmg
       - name: Upload macOS DMG

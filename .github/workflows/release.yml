@@ -39,9 +39,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       # macOS: import signing certificate (only if secrets are configured)
       - name: Import Apple signing certificate
@@ -63,7 +69,7 @@ jobs:
       - name: Build Tauri app
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-        run: cargo tauri build --target ${{ matrix.target }}
+        run: npm run build -- --target ${{ matrix.target }}
         working-directory: .
 
       # macOS: create DMG from .app bundle (Tauri's built-in DMG bundler is broken on newer macOS)

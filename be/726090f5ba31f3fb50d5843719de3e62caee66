@@ -1,0 +1,21 @@
+package.json
+  s_1ab1641efae48b::t_52f51b4c5269b0 6-11
+.github/workflows/release.yml
+  s_1ab1641efae48b::t_52f51b4c5269b0 42,44-50,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "be726090f5ba31f3fb50d5843719de3e62caee66",
+  "prompts": {},
+  "sessions": {
+    "s_1ab1641efae48b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e842b-f8ed-7d21-ac1a-14331c48d0dd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Chase McDougall <chasemcdougall@hotmail.com>"
+    }
+  }
+}

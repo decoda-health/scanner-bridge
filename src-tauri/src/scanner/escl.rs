@@ -20,8 +20,14 @@ fn escl_scanners() -> &'static Mutex<HashMap<String, (String, String)>> {
 // Discovery via platform-native mDNS
 // ---------------------------------------------------------------------------
 
+const DNS_SD_TIMEOUT_SECS: u64 = 10;
+
 /// Run a command with a timeout (dns-sd never exits on its own).
-fn run_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> std::io::Result<std::process::Output> {
+fn run_with_timeout(
+    cmd: &str,
+    args: &[&str],
+    timeout_secs: u64,
+) -> std::io::Result<std::process::Output> {
     let mut child = Command::new(cmd)
         .args(args)
         .stdout(std::process::Stdio::piped())
@@ -36,7 +42,11 @@ fn run_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> std::io::Res
 /// Discover eSCL scanners on the local network.
 /// Uses `dns-sd` (macOS) or `dns-sd.exe` (Windows with Bonjour installed).
 fn discover_scanners() {
-    let output = run_with_timeout("dns-sd", &["-B", "_uscan._tcp", "local"], 3);
+    let output = run_with_timeout(
+        "dns-sd",
+        &["-B", "_uscan._tcp", "local"],
+        DNS_SD_TIMEOUT_SECS,
+    );
 
     let output = match output {
         Ok(o) => o,
@@ -51,7 +61,11 @@ fn discover_scanners() {
     // Parse instance names from dns-sd -B output
     let mut names: Vec<String> = Vec::new();
     for line in text.lines() {
-        if !line.contains("_uscan._tcp.") || line.contains("STARTING") {
+        if !line.contains("_uscan._tcp.")
+            || line.contains("STARTING")
+            || line.starts_with("Browsing for ")
+            || line.starts_with("Timestamp")
+        {
             continue;
         }
         if let Some(idx) = line.find("_uscan._tcp.") {
@@ -70,7 +84,11 @@ fn discover_scanners() {
 
 /// Resolve a scanner's hostname and UUID.
 fn resolve_scanner(instance_name: &str) {
-    let output = run_with_timeout("dns-sd", &["-L", instance_name, "_uscan._tcp", "local"], 3);
+    let output = run_with_timeout(
+        "dns-sd",
+        &["-L", instance_name, "_uscan._tcp", "local"],
+        DNS_SD_TIMEOUT_SECS,
+    );
 
     let output = match output {
         Ok(o) => o,
@@ -85,31 +103,18 @@ fn resolve_scanner(instance_name: &str) {
     let mut uuid: Option<String> = None;
 
     for line in text.lines() {
-        if let Some(idx) = line.find("can be reached at ") {
-            let after = &line[idx + "can be reached at ".len()..];
-            let host = after.split_whitespace().next().unwrap_or("");
-            // Strip trailing dot and port (host.:port)
-            let host = host.trim_end_matches('.');
-            if let Some(colon) = host.rfind(':') {
-                hostname = Some(host[..colon].trim_end_matches('.').to_string());
-            } else {
-                hostname = Some(host.to_string());
-            }
-        }
-        if let Some(idx) = line.find("UUID=") {
-            let after = &line[idx + "UUID=".len()..];
-            let id = after.split_whitespace().next().unwrap_or("").to_string();
-            if !id.is_empty() {
-                uuid = Some(id);
-            }
-        }
+        hostname = hostname.or_else(|| parse_reachable_host(line));
+        uuid = uuid.or_else(|| parse_uuid(line));
     }
 
-    if let (Some(host), Some(id)) = (hostname, uuid) {
-        tracing::info!("Discovered eSCL scanner: {instance_name} → {host} (UUID={id})");
+    if let Some(host) = hostname {
+        let id = uuid.unwrap_or_else(|| fallback_scanner_id(instance_name, &host));
+        tracing::info!("Discovered eSCL scanner: {instance_name} -> {host} (id={id})");
         if let Ok(mut map) = escl_scanners().lock() {
             map.insert(id, (instance_name.to_string(), host));
         }
+    } else {
+        tracing::warn!("Could not resolve eSCL scanner '{instance_name}'. dns-sd output: {text}");
     }
 }
 
@@ -117,6 +122,90 @@ fn combined_output(output: &std::process::Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     format!("{stdout}{stderr}")
+}
+
+fn parse_reachable_host(line: &str) -> Option<String> {
+    let after = line.split_once("can be reached at ")?.1;
+    let mut parts = after.split_whitespace();
+    let raw_host = parts.next()?.trim_end_matches('.');
+    let mut host = raw_host.to_string();
+
+    if let Some((name, port)) = raw_host.rsplit_once(':') {
+        host = format!("{}:{}", name.trim_end_matches('.'), port);
+    } else {
+        let tokens: Vec<&str> = after.split_whitespace().collect();
+        for window in tokens.windows(2) {
+            if window[0].eq_ignore_ascii_case("port") {
+                host = format!("{}:{}", raw_host.trim_end_matches('.'), window[1]);
+                break;
+            }
+        }
+    }
+
+    (!host.is_empty()).then_some(host)
+}
+
+fn parse_uuid(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let idx = lower.find("uuid=")?;
+    let after = &line[idx + "uuid=".len()..];
+    let id = after
+        .trim_start_matches(|c| c == '"' || c == '\'')
+        .split(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+        .next()?
+        .trim_matches(|c| c == '"' || c == '\'' || c == ';')
+        .to_string();
+
+    (!id.is_empty()).then_some(id)
+}
+
+fn fallback_scanner_id(instance_name: &str, host: &str) -> String {
+    format!("escl:{host}:{instance_name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fallback_scanner_id, parse_reachable_host, parse_uuid};
+
+    #[test]
+    fn parses_dns_sd_reachable_host_with_colon_port() {
+        let line = "12:40:48.111 Brother MFC._uscan._tcp.local. can be reached at BRWABC123.local.:80 (interface 14)";
+
+        assert_eq!(
+            parse_reachable_host(line).as_deref(),
+            Some("BRWABC123.local:80")
+        );
+    }
+
+    #[test]
+    fn parses_dns_sd_reachable_host_with_port_token() {
+        let line = "Brother MFC._uscan._tcp.local. can be reached at BRWABC123.local. port 8080";
+
+        assert_eq!(
+            parse_reachable_host(line).as_deref(),
+            Some("BRWABC123.local:8080")
+        );
+    }
+
+    #[test]
+    fn parses_uuid_case_insensitively() {
+        assert_eq!(
+            parse_uuid(r#"txtvers=1 UUID=E3248000-80CE-11DB-8000-30055CABCDEF"#).as_deref(),
+            Some("E3248000-80CE-11DB-8000-30055CABCDEF")
+        );
+        assert_eq!(
+            parse_uuid(r#""txtvers=1" "uuid=e3248000-80ce-11db-8000-30055cabcdef""#).as_deref(),
+            Some("e3248000-80ce-11db-8000-30055cabcdef")
+        );
+    }
+
+    #[test]
+    fn builds_fallback_id_when_uuid_is_absent() {
+        assert_eq!(
+            fallback_scanner_id("Brother MFC-L8900CDW series", "BRWABC123.local:80"),
+            "escl:BRWABC123.local:80:Brother MFC-L8900CDW series"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +333,10 @@ pub fn escl_scan(
     )
     .map_err(|e| ScanError::from(format!("Failed to encode PNG: {e}")))?;
 
-    tracing::info!("Scan complete: {width}x{height} PNG ({} bytes)", png_data.len());
+    tracing::info!(
+        "Scan complete: {width}x{height} PNG ({} bytes)",
+        png_data.len()
+    );
 
     Ok(vec![ScannedPage {
         png_data,
@@ -271,11 +363,9 @@ impl EsclScanner {
         discover_scanners();
 
         // Periodically re-discover
-        std::thread::spawn(|| {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(15));
-                discover_scanners();
-            }
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_secs(15));
+            discover_scanners();
         });
 
         EsclScanner

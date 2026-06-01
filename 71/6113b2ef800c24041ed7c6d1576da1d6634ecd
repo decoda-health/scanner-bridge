@@ -1,0 +1,19 @@
+.github/workflows/release.yml
+  s_8e884ac6e70095::t_52ba3f410ddbb3 140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "716113b2ef800c24041ed7c6d1576da1d6634ecd",
+  "prompts": {},
+  "sessions": {
+    "s_8e884ac6e70095": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e843a-c79d-7980-9e8f-725ac12fe1ca",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Chase McDougall <chasemcdougall@hotmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+src-tauri/src/scanner/escl.rs
+  s_4be2c87b90be8b::t_e91c4c5f3af5b8 24,26-30,45-47,49,87-91,106-107,110-112,116-117,127-152,154-163
+  s_4be2c87b90be8b::t_b8d573d4d2fb53 23,64-68
+  s_4be2c87b90be8b::t_02751d1ed3030d 153,164-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "27d87a2576ee97a8b865d3ccd6c7128eb44e029f",
+  "prompts": {},
+  "sessions": {
+    "s_4be2c87b90be8b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8401-ed5b-7511-af96-94399e90cac3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Chase McDougall <chasemcdougall@hotmail.com>"
+    }
+  }
+}
